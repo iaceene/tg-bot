@@ -1,13 +1,18 @@
+
 {
   "name": "tg-webapp",
-  "module": "index.ts",
-  "type": "module",
+  "version": "1.0.0",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "start": "bun index.ts",
+    "typecheck": "tsc --noEmit"
   },
-  "peerDependencies": {
-    "typescript": "^7"
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@types/express": "^5.0.6",
