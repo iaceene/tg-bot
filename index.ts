@@ -27,7 +27,7 @@ bot.on('message:text', (ctx) => {
 app.use(express.json());
 app.use(`/${BOT_TOKEN}`, webhookCallback(bot, 'express'));
 
-app.get('/', (req, res)=>{
+app.get('/health', (req, res)=>{
     res.sendFile(path.join(__dirname, 'html/index.html'));
 })
 
