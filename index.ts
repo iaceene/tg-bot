@@ -3,6 +3,7 @@ import { Bot, webhookCallback } from 'grammy';
 import dotenv from 'dotenv';
 import path from 'path'
 
+let status = "starting...."
 
 dotenv.config({ debug: false });
 
@@ -27,8 +28,8 @@ bot.on('message:text', (ctx) => {
 app.use(express.json());
 app.use(`/${BOT_TOKEN}`, webhookCallback(bot, 'express'));
 
-app.get('/health', (req, res)=>{
-    res.sendFile(path.join(__dirname, 'html/index.html'));
+app.get('/', (req, res)=>{
+    res.json({status})
 })
 
 app.listen(PORT, async ()=>{
@@ -36,8 +37,8 @@ app.listen(PORT, async ()=>{
     try {
         const webhookUrl = `${PUBLIC_URL}/${BOT_TOKEN}`;
         await bot.api.setWebhook(webhookUrl);
-        console.log(`Webhook successfully set to: ${webhookUrl}`);
+        status = `Webhook successfully set to: ${webhookUrl}`;
     } catch (error) {
-        console.error('Failed to set Telegram Webhook:', error);
+        status = `Failed to set Telegram Webhook: ${(error as Error).message}`
     }
 })
