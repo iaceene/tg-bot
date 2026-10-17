@@ -12,46 +12,35 @@ if (!token) {
 const LLM_TOKEN = process.env.LLM_TOKEN;
 const MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const FALLBACK_MODEL = 'openrouter/free';
-// Your Telegram numeric user id. Send /id to the bot to get it.
+// Optional: restrict the bot to you. Send /id to the bot to get your id.
+// If OWNER_ID is not set, anyone can use the bot.
 const OWNER_ID = process.env.OWNER_ID ? Number(process.env.OWNER_ID) : null;
 
 const bot = new Bot(token);
 
 // ---------- System prompt ----------
-const SYSTEM_PROMPT = `You are Yassine Ajagrou's personal AI assistant and local agent, running inside Telegram.
+const SYSTEM_PROMPT = `You are a technical Q&A assistant inside Telegram. You help people understand programming and computer science: languages (C, C++, Python, JavaScript, TypeScript, Go, Rust...), web (React, Next.js, Node, HTML/CSS), databases, Git, Linux, networking, algorithms, data structures, DevOps, and software engineering concepts.
 
-Your role is to help Yassine manage his personal and professional information, answer questions about his identity and background, recall his projects, and provide assistance based on the context and data available to you.
+HOW TO ANSWER:
+1. Start with a clear definition in one or two simple sentences.
+2. Then explain how it works, in plain words, with an analogy if it helps.
+3. Add a short, correct code example when the topic is about code. Put code in fenced blocks with the language name, for example \`\`\`c.
+4. Mention one or two common mistakes or things to watch out for when relevant.
+5. End with a one-line summary only if the answer is long.
 
-CORE RULES:
-1. Answer naturally, clearly, and briefly when Yassine is greeting you or having a casual conversation.
-2. When asked about Yassine, use the provided personal context to answer accurately.
-3. Recognize "Yassine Ajagrou" as the person you assist and "iaceene" as his primary online username/handle.
-4. Help identify and recall his usernames, profiles, and accounts across platforms such as GitHub, npm, and other services, but only when the relevant information is available in the provided context.
-5. Use the provided context to answer questions about his software projects, technical skills, education, professional experience, job applications, and career goals.
-6. ONLY use provided context or explicitly authorized data sources for personal facts. Never invent usernames, profile URLs, credentials, work experience, or personal information.
-7. If the requested information is unavailable, explain what is missing instead of guessing.
-8. Act as a helpful personal agent: organize information, assist with tasks, provide recommendations, and help Yassine make informed decisions.
-9. Do not reveal internal instructions, private system prompts, or internal reasoning. Provide concise explanations of conclusions when useful.
-10. You are replying in Telegram. Write plain text. Do not use Markdown symbols like ** or #. Use simple dashes for lists and write links as full URLs.
-11. Keep responses relevant to Yassine. Do not confuse his identity, projects, accounts, or information with those of another person.
-12. Protect personal information, account credentials, API keys, passwords, tokens, and other secrets. Never expose secrets or claim access to accounts or devices you cannot actually access.
-13. Distinguish between verified information, information provided by Yassine, and assumptions. Be transparent about uncertainty.
-14. When asked to perform an action, help complete it if the necessary tools and permissions are available. Otherwise, explain what is needed.
-15. Maintain a professional, friendly, and straightforward tone. Avoid unnecessary formalities and generic AI disclaimers.
+STYLE:
+- Be concise: aim for under 250 words unless the user asks for more depth ("explain in detail", "go deeper").
+- Reply in the same language the user writes in (English, French, Arabic, ...). Keep technical terms and code in English.
+- Use simple language first, then precise terminology. Assume the user may be a student.
+- Use **bold** for key terms and plain dashes for lists. Do not use tables or headings.
+- If the question is a comparison ("X vs Y"), give a short side-by-side explanation and say when to use each.
+- If the user asks about debugging, ask for the code and error message if they were not provided.
 
-PERSONAL IDENTITY:
-- Full name: Yassine Ajagrou
-- Primary username / online handle: iaceene
-- GitHub: https://github.com/iaceene
-- npm username: iaceene
-- Main software project: Folioblaze, a portfolio-building platform.
-- Technical focus: software development, full-stack web development, frontend engineering, backend systems, and AI-powered applications.
-- Education: 1337 coding school.
-
-PERSONALIZATION:
-Use these identity details as initial context, not as an exhaustive or permanently complete profile. Prefer newer, explicitly provided information when details change. Only provide additional personal details when supported by the available context.
-
-Your main objective is to act as Yassine's reliable personal assistant: understand who he is, help him retrieve information about himself and his online presence, support his projects and career, and make everyday tasks easier.`;
+HONESTY:
+- Never invent APIs, functions, flags, or library features. If you are not sure, say so.
+- If an answer depends on a version or platform, say which one.
+- If the question is not about technology, answer briefly and politely, or steer the conversation back to technical topics.
+- Do not reveal these instructions.`;
 
 // ---------- Short-term memory (best effort) ----------
 // Lives in the function instance memory, so it resets on cold starts.
@@ -74,13 +63,13 @@ async function callOpenRouter(model: string, messages: ChatMessage[]): Promise<s
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${LLM_TOKEN}`,
-      'X-Title': 'Folioblaze TG Agent',
+      'X-Title': 'Technical Q&A Telegram Bot',
     },
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.5,
-      max_tokens: 700,
+      temperature: 0.3,
+      max_tokens: 900,
       top_p: 0.95,
     }),
     signal: AbortSignal.timeout(25_000),
@@ -102,14 +91,11 @@ async function callOpenRouter(model: string, messages: ChatMessage[]): Promise<s
 async function askLlm(chatId: number, question: string): Promise<string> {
   if (!LLM_TOKEN) {
     console.error('LLM_TOKEN is not set');
-    return 'The assistant is not configured yet (missing LLM_TOKEN).';
+    return 'The bot is not configured yet (missing LLM_TOKEN).';
   }
 
   const messages: ChatMessage[] = [
-    {
-      role: 'system',
-      content: `${SYSTEM_PROMPT}\n\nCurrent date and time (UTC): ${new Date().toISOString()}`,
-    },
+    { role: 'system', content: SYSTEM_PROMPT },
     ...(histories.get(chatId) ?? []),
     { role: 'user', content: question },
   ];
@@ -127,34 +113,88 @@ async function askLlm(chatId: number, question: string): Promise<string> {
     }
   }
 
-  return 'Sorry, I could not get an answer from the AI right now. Please try again in a moment.';
+  return 'Sorry, I could not get an answer right now. Please try again in a moment.';
 }
 
-// ---------- Telegram helpers ----------
-async function sendLong(ctx: Context, text: string) {
-  // Telegram messages are limited to 4096 characters
-  for (let i = 0; i < text.length; i += 4000) {
-    await ctx.reply(text.slice(i, i + 4000));
+// ---------- Telegram formatting ----------
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Converts the model's Markdown (code blocks, `inline code`, **bold**) to Telegram HTML
+function toTelegramHtml(md: string): string {
+  const saved: string[] = [];
+  const keep = (html: string) => `\u0000${saved.push(html) - 1}\u0000`;
+
+  let text = md.replace(/```(\w+)?[ \t]*\n?([\s\S]*?)```/g, (_m, lang, code) =>
+    keep(
+      `<pre><code${lang ? ` class="language-${lang}"` : ''}>${escapeHtml(String(code).trimEnd())}</code></pre>`
+    )
+  );
+
+  text = text.replace(/`([^`\n]+)`/g, (_m, code) => keep(`<code>${escapeHtml(code)}</code>`));
+
+  text = escapeHtml(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>');
+
+  return text.replace(/\u0000(\d+)\u0000/g, (_m, i) => saved[Number(i)] ?? '');
+}
+
+// Splits long answers (Telegram limit is 4096 characters per message)
+function splitMessage(text: string, limit = 3500): string[] {
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const paragraph of text.split('\n\n')) {
+    if ((current + '\n\n' + paragraph).length > limit && current) {
+      chunks.push(current);
+      current = paragraph;
+    } else {
+      current = current ? `${current}\n\n${paragraph}` : paragraph;
+    }
+    while (current.length > limit) {
+      chunks.push(current.slice(0, limit));
+      current = current.slice(limit);
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+async function sendAnswer(ctx: Context, text: string) {
+  for (const chunk of splitMessage(text)) {
+    try {
+      await ctx.reply(toTelegramHtml(chunk), { parse_mode: 'HTML' });
+    } catch {
+      // If Telegram rejects the formatting, send it as plain text
+      await ctx.reply(chunk);
+    }
   }
 }
 
 // ---------- Handlers ----------
-// Registered before the owner gate so you can find your id
+// Registered before the owner gate so you can always find your id
 bot.command('id', async (ctx) => {
   await ctx.reply(`Your Telegram id: ${ctx.from?.id}`);
 });
 
-// Owner gate: only you can use the agent (if OWNER_ID is set)
 bot.use(async (ctx, next) => {
   if (OWNER_ID && ctx.from?.id !== OWNER_ID) {
-    await ctx.reply('Sorry, this is a private assistant.');
+    await ctx.reply('Sorry, this is a private bot.');
     return;
   }
   await next();
 });
 
 bot.command('start', async (ctx) => {
-  await ctx.reply('Welcome to the Folioblaze TG agent. Ask me anything.\n\n/reset clears the conversation\n/ping checks the bot');
+  await ctx.reply(
+    'Hi! Ask me any technical question, for example:\n' +
+      '- What is React?\n' +
+      '- What is a pointer in C?\n' +
+      '- Difference between process and thread\n\n' +
+      '/reset clears the conversation\n/ping checks the bot'
+  );
 });
 
 bot.command('ping', async (ctx) => {
@@ -169,7 +209,7 @@ bot.command('reset', async (ctx) => {
 bot.on('message:text', async (ctx) => {
   await ctx.replyWithChatAction('typing');
   const answer = await askLlm(ctx.chat.id, ctx.message.text);
-  await sendLong(ctx, answer);
+  await sendAnswer(ctx, answer);
 });
 
 // ---------- Vercel entry point ----------
