@@ -1,5 +1,4 @@
-
-import { Bot, webhookCallback } from 'grammy';
+import { Bot } from 'grammy';
 
 const token = process.env.BOT_TOKEN;
 
@@ -21,4 +20,23 @@ bot.on('message:text', async (ctx) => {
   await ctx.reply(`You said: ${ctx.message.text}`);
 });
 
-export default webhookCallback(bot, 'express');
+let initialized = false;
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') {
+    return res.status(200).send('ok');
+  }
+
+  try {
+    if (!initialized) {
+      await bot.init();
+      initialized = true;
+    }
+    await bot.handleUpdate(req.body);
+  } catch (err) {
+    console.error('Update failed:', err);
+  }
+
+  // Always answer 200 so Telegram does not keep retrying
+  return res.status(200).json({ ok: true });
+}
